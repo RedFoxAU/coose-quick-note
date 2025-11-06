@@ -1,218 +1,267 @@
-// Note manager class
-class NoteManager {
-    constructor() {
-        this.notes = this.loadNotes();
-        this.draggedElement = null;
-        this.init();
-    }
+// State management
+let notes = [];
+const STORAGE_KEY = 'quickNotes';
 
-    init() {
-        this.renderNotes();
-        this.attachEventListeners();
-    }
+// DOM elements
+const notesContainer = document.getElementById('notesContainer');
+const addNoteBtn = document.getElementById('addNoteBtn');
+const clearAllBtn = document.getElementById('clearAllBtn');
 
-    attachEventListeners() {
-        const addBtn = document.getElementById('addNoteBtn');
-        const noteInput = document.getElementById('noteInput');
+// Initialize app
+document.addEventListener('DOMContentLoaded', () => {
+    loadNotes();
+    renderNotes();
+    setupEventListeners();
+});
 
-        addBtn.addEventListener('click', () => this.addNote());
-        noteInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                this.addNote();
-            }
-        });
-    }
+// Event listeners
+function setupEventListeners() {
+    addNoteBtn.addEventListener('click', addNote);
+    clearAllBtn.addEventListener('click', clearAllNotes);
+}
 
-    addNote() {
-        const noteInput = document.getElementById('noteInput');
-        const content = noteInput.value.trim();
-
-        if (!content) {
-            alert('Please enter a note');
-            return;
+// Load notes from localStorage
+function loadNotes() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+        try {
+            notes = JSON.parse(stored);
+        } catch (e) {
+            console.error('Error loading notes:', e);
+            notes = [];
         }
-
-        const note = {
-            id: Date.now(),
-            content: content,
-            timestamp: new Date().toLocaleString(),
-            order: this.notes.length
-        };
-
-        this.notes.push(note);
-        this.saveNotes();
-        this.renderNotes();
-        noteInput.value = '';
-        noteInput.focus();
-    }
-
-    deleteNote(id) {
-        if (confirm('Are you sure you want to delete this note?')) {
-            this.notes = this.notes.filter(note => note.id !== id);
-            this.updateOrder();
-            this.saveNotes();
-            this.renderNotes();
-        }
-    }
-
-    editNote(id) {
-        const note = this.notes.find(n => n.id === id);
-        if (!note) return;
-
-        const noteElement = document.querySelector(`[data-id="${id}"]`);
-        const contentElement = noteElement.querySelector('.note-content');
-        const actionsElement = noteElement.querySelector('.note-actions');
-
-        const currentContent = note.content;
-        contentElement.innerHTML = `<textarea class="note-edit-textarea">${currentContent}</textarea>`;
-
-        actionsElement.innerHTML = `
-            <button class="note-btn save-btn" onclick="noteManager.saveEdit(${id})">Save</button>
-            <button class="note-btn cancel-btn" onclick="noteManager.cancelEdit(${id})">Cancel</button>
-        `;
-
-        noteElement.draggable = false;
-    }
-
-    saveEdit(id) {
-        const noteElement = document.querySelector(`[data-id="${id}"]`);
-        const textarea = noteElement.querySelector('.note-edit-textarea');
-        const newContent = textarea.value.trim();
-
-        if (!newContent) {
-            alert('Note cannot be empty');
-            return;
-        }
-
-        const note = this.notes.find(n => n.id === id);
-        note.content = newContent;
-        this.saveNotes();
-        this.renderNotes();
-    }
-
-    cancelEdit(id) {
-        this.renderNotes();
-    }
-
-    updateOrder() {
-        this.notes.forEach((note, index) => {
-            note.order = index;
-        });
-    }
-
-    loadNotes() {
-        const saved = localStorage.getItem('cooseNotes');
-        return saved ? JSON.parse(saved) : [];
-    }
-
-    saveNotes() {
-        localStorage.setItem('cooseNotes', JSON.stringify(this.notes));
-    }
-
-    renderNotes() {
-        const container = document.getElementById('notesContainer');
-
-        if (this.notes.length === 0) {
-            container.innerHTML = '<div class="empty-state">No notes yet. Add your first note above!</div>';
-            return;
-        }
-
-        const sortedNotes = [...this.notes].sort((a, b) => a.order - b.order);
-
-        container.innerHTML = sortedNotes.map(note => `
-            <div class="note" draggable="true" data-id="${note.id}">
-                <div class="note-header">
-                    <span class="note-order">#${note.order + 1}</span>
-                    <span class="note-timestamp">${note.timestamp}</span>
-                </div>
-                <div class="note-content">${this.escapeHtml(note.content)}</div>
-                <div class="note-actions">
-                    <button class="note-btn edit-btn" onclick="noteManager.editNote(${note.id})">Edit</button>
-                    <button class="note-btn delete-btn" onclick="noteManager.deleteNote(${note.id})">Delete</button>
-                </div>
-            </div>
-        `).join('');
-
-        this.attachDragListeners();
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    attachDragListeners() {
-        const noteElements = document.querySelectorAll('.note');
-
-        noteElements.forEach(noteElement => {
-            noteElement.addEventListener('dragstart', (e) => {
-                this.draggedElement = noteElement;
-                noteElement.classList.add('dragging');
-            });
-
-            noteElement.addEventListener('dragend', () => {
-                noteElement.classList.remove('dragging');
-            });
-
-            noteElement.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                const draggingElement = document.querySelector('.dragging');
-                if (!draggingElement || draggingElement === noteElement) return;
-
-                const container = document.getElementById('notesContainer');
-                const afterElement = this.getDragAfterElement(container, e.clientY);
-
-                if (afterElement == null) {
-                    container.appendChild(draggingElement);
-                } else {
-                    container.insertBefore(draggingElement, afterElement);
-                }
-            });
-
-            noteElement.addEventListener('drop', (e) => {
-                e.preventDefault();
-                this.updateNotesOrder();
-            });
-        });
-    }
-
-    getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.note:not(.dragging)')];
-
-        return draggableElements.reduce((closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-
-            if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
-            }
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
-    }
-
-    updateNotesOrder() {
-        const noteElements = document.querySelectorAll('.note');
-        const newOrder = [];
-
-        noteElements.forEach((element, index) => {
-            const id = parseInt(element.getAttribute('data-id'));
-            const note = this.notes.find(n => n.id === id);
-            if (note) {
-                note.order = index;
-                newOrder.push(note);
-            }
-        });
-
-        this.notes = newOrder;
-        this.saveNotes();
-        this.renderNotes();
     }
 }
 
-// Initialize the note manager
-let noteManager;
-document.addEventListener('DOMContentLoaded', () => {
-    noteManager = new NoteManager();
-});
+// Save notes to localStorage
+function saveNotes() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+}
+
+// Add new note
+function addNote() {
+    const newNote = {
+        id: Date.now(),
+        content: 'Double-click to edit this note',
+        timestamp: new Date().toISOString()
+    };
+    notes.unshift(newNote);
+    saveNotes();
+    renderNotes();
+}
+
+// Delete note
+function deleteNote(id) {
+    notes = notes.filter(note => note.id !== id);
+    saveNotes();
+    renderNotes();
+}
+
+// Update note content
+function updateNoteContent(id, content) {
+    const note = notes.find(n => n.id === id);
+    if (note) {
+        note.content = content;
+        note.timestamp = new Date().toISOString();
+        saveNotes();
+    }
+}
+
+// Clear all notes
+function clearAllNotes() {
+    if (notes.length === 0) return;
+    
+    if (confirm('Are you sure you want to delete all notes?')) {
+        notes = [];
+        saveNotes();
+        renderNotes();
+    }
+}
+
+// Render notes
+function renderNotes() {
+    if (notes.length === 0) {
+        notesContainer.innerHTML = `
+            <div class="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h2>No notes yet</h2>
+                <p>Click "Add Note" to get started</p>
+            </div>
+        `;
+        return;
+    }
+
+    notesContainer.innerHTML = notes.map((note, index) => createNoteElement(note, index)).join('');
+    
+    // Setup drag and drop for each note
+    const noteElements = notesContainer.querySelectorAll('.note-item');
+    noteElements.forEach(element => {
+        setupNoteDragDrop(element);
+        setupNoteEdit(element);
+    });
+}
+
+// Create note element HTML
+function createNoteElement(note, index) {
+    const date = new Date(note.timestamp);
+    const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    return `
+        <div class="note-item" draggable="true" data-note-id="${note.id}">
+            <div class="note-header">
+                <div class="note-priority">
+                    <span class="priority-number">${index + 1}</span>
+                    <span>Priority ${index + 1}</span>
+                </div>
+                <div class="note-actions">
+                    <button class="icon-btn delete-btn" data-note-id="${note.id}" title="Delete note">🗑️</button>
+                </div>
+            </div>
+            <div class="note-content" contenteditable="false">${escapeHtml(note.content)}</div>
+            <div class="note-timestamp">Last updated: ${formattedDate}</div>
+        </div>
+    `;
+}
+
+// Setup drag and drop for a note
+function setupNoteDragDrop(element) {
+    element.addEventListener('dragstart', handleDragStart);
+    element.addEventListener('dragend', handleDragEnd);
+    element.addEventListener('dragover', handleDragOver);
+    element.addEventListener('drop', handleDrop);
+    element.addEventListener('dragenter', handleDragEnter);
+    element.addEventListener('dragleave', handleDragLeave);
+}
+
+// Setup double-click editing for a note
+function setupNoteEdit(element) {
+    const contentDiv = element.querySelector('.note-content');
+    const deleteBtn = element.querySelector('.delete-btn');
+    
+    // Double-click to edit
+    contentDiv.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        startEditing(element);
+    });
+    
+    // Delete button
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const noteId = parseInt(element.dataset.noteId);
+        deleteNote(noteId);
+    });
+}
+
+// Start editing a note
+function startEditing(element) {
+    const contentDiv = element.querySelector('.note-content');
+    const originalContent = contentDiv.textContent;
+    
+    contentDiv.contentEditable = 'true';
+    contentDiv.classList.add('editing');
+    contentDiv.focus();
+    
+    // Select all text
+    const range = document.createRange();
+    range.selectNodeContents(contentDiv);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+    // Save on blur
+    const saveEdit = () => {
+        contentDiv.contentEditable = 'false';
+        contentDiv.classList.remove('editing');
+        
+        const newContent = contentDiv.textContent.trim();
+        if (newContent && newContent !== originalContent) {
+            const noteId = parseInt(element.dataset.noteId);
+            updateNoteContent(noteId, newContent);
+            renderNotes();
+        } else if (!newContent) {
+            contentDiv.textContent = originalContent;
+        }
+    };
+    
+    contentDiv.addEventListener('blur', saveEdit, { once: true });
+    
+    // Save on Enter, cancel on Escape
+    contentDiv.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            contentDiv.blur();
+        } else if (e.key === 'Escape') {
+            contentDiv.textContent = originalContent;
+            contentDiv.blur();
+        }
+    });
+}
+
+// Drag and drop handlers
+let draggedElement = null;
+let draggedIndex = null;
+
+function handleDragStart(e) {
+    draggedElement = this;
+    draggedIndex = Array.from(notesContainer.children).indexOf(this);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', this.innerHTML);
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    
+    // Remove drag-over class from all elements
+    document.querySelectorAll('.note-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    if (this !== draggedElement) {
+        this.classList.add('drag-over');
+    }
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+    
+    if (draggedElement !== this) {
+        const allItems = Array.from(notesContainer.children);
+        const dropIndex = allItems.indexOf(this);
+        
+        // Reorder notes array
+        const [movedNote] = notes.splice(draggedIndex, 1);
+        notes.splice(dropIndex, 0, movedNote);
+        
+        // Save and re-render
+        saveNotes();
+        renderNotes();
+    }
+    
+    return false;
+}
+
+// Utility function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
